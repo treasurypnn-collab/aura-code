@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AURA CODE</title>
+  
+  <!-- ตั้งค่า PWA สำหรับ iOS (Safari) -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AURA CODE">
+  <meta name="theme-color" content="#121417">
+  
+  <!-- ฝังไอคอนแอปในตัว (SVG Base64) -->
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://w3.org' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23121417'/><circle cx='50' cy='50' r='30' fill='none' stroke='%23e6d2b5' stroke-width='3'/><circle cx='50' cy='50' r='15' fill='none' stroke='%23e6d2b5' stroke-width='2'/></svg>">
+
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body {
+      margin: 0; padding: 20px 16px 40px;
+      background-color: #121417; color: #f0f0f0;
+      display: flex; flex-direction: column; align-items: center;
+      min-height: 100vh;
+    }
+    h1 { font-size: 18px; letter-spacing: 3px; font-weight: 500; color: #e6d2b5; margin: 10px 0 20px; }
+    .controls {
+      width: 100%; max-width: 340px;
+      background: #1c1f24; padding: 16px; border-radius: 16px;
+      display: flex; flex-direction: column; gap: 12px;
+      margin-bottom: 20px; border: 1px solid #2a2e35;
+    }
+    label { font-size: 12px; color: #9ca3af; margin-bottom: 4px; display: block; }
+    input {
+      width: 100%; padding: 10px 12px; border-radius: 10px;
+      border: 1px solid #374151; background: #121417; color: #fff;
+      font-size: 15px; outline: none;
+    }
+    input:focus { border-color: #e6d2b5; }
+    .btn-group { display: flex; gap: 8px; margin-top: 4px; }
+    button {
+      flex: 1; padding: 12px; border: none; border-radius: 10px;
+      font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s;
+    }
+    .btn-gen { background: #e6d2b5; color: #121417; }
+    .btn-save { background: #2a2e35; color: #e6d2b5; border: 1px solid #e6d2b5; }
+    button:active { transform: scale(0.97); }
+    
+    #preview-wrapper {
+      width: 270px; height: 480px; border-radius: 20px; overflow: hidden;
+      box-shadow: 0 15px 40px rgba(0,0,0,0.6); position: relative;
+    }
+    svg { width: 100%; height: 100%; display: block; }
+    .info-badge {
+      margin-top: 12px; font-size: 12px; color: #9ca3af; text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>AURA CODE</h1>
+
+  <div class="controls">
+    <div>
+      <label>ชื่อของคุณ (ภาษาอังกฤษหรือไทย)</label>
+      <input type="text" id="userName" value="PLAS" placeholder="พิมพ์ชื่อที่นี่">
+    </div>
+    <div>
+      <label>วันเดือนปีเกิด (ค.ศ.)</label>
+      <input type="date" id="birthDate" value="1988-11-28">
+    </div>
+    <div class="btn-group">
+      <button class="btn-gen" onclick="renderWallpaper()">สร้างภาพ</button>
+      <button class="btn-save" onclick="downloadPNG()">บันทึกรูป</button>
+    </div>
+  </div>
+
+  <div id="preview-wrapper">
+    <svg id="wallpaper-svg" viewBox="0 0 1080 1920" xmlns="http://w3.org"></svg>
+  </div>
+  <div class="info-badge" id="energy-info"></div>
+
+  <script>
+    // 1. ฝัง Manifest สำหรับ PWA แบบไฟล์เดียว
+    const manifestData = {
+      name: "AURA CODE",
+      short_name: "AURA CODE",
+      start_url: ".",
+      display: "standalone",
+      background_color: "#121417",
+      theme_color: "#121417"
+    };
+    const manifestBlob = new Blob([JSON.stringify(manifestData)], {type: 'application/json'});
+    const manifestLink = document.createElement('link');
+    manifestLink.rel = 'manifest';
+    manifestLink.href = URL.createObjectURL(manifestBlob);
+    document.head.appendChild(manifestLink);
+
+    // 2. ชุดสีทักษาปกรณ์ตามวันเกิด (ตัดสีกาลกิณีออก 100%)
+    const taksaPalettes = [
+      { day: "วันอาทิตย์", c1: "#6b8279", c2: "#3d524a", c3: "#24332d", desc: "โทนเขียวเสจ (เดช) ตัดสีฟ้ากาลกิณี" },
+      { day: "วันจันทร์", c1: "#8ea395", c2: "#5d736e", c3: "#354856", desc: "โทนเขียวเสจ-คราม (เดช/มนตรี) ตัดสีแดงกาลกิณี" },
+      { day: "วันอังคาร", c1: "#7b6d8d", c2: "#524863", c3: "#2f2a3b", desc: "โทนม่วงหม่น (ศรี) ตัดสีขาว/เหลืองกาลกิณี" },
+      { day: "วันพุธ", c1: "#5c7a67", c2: "#3e5949", c3: "#23362b", desc: "โทนเขียวมรกตหม่น (บริวาร/เดช) ตัดสีชมพูกาลกิณี" },
+      { day: "วันพฤหัสบดี", c1: "#536b88", c2: "#384b63", c3: "#1f2b3b", desc: "โทนฟ้าคราม (ศรี) ตัดสีม่วง/ดำกาลกิณี" },
+      { day: "วันศุกร์", c1: "#7592a8", c2: "#526c82", c3: "#314454", desc: "โทนฟ้าหม่น (บริวาร/มนตรี) ตัดสีเทาดำกาลกิณี" },
+      { day: "วันเสาร์", c1: "#3c4c6e", c2: "#28334d", c3: "#171e2e", desc: "โทนน้ำเงินเข้ม (ศรี) ตัดสีเขียวกาลกิณี" }
+    ];
+
+    // 3. ฟังก์ชันสร้างรหัสตัวเลขคงที่ (Deterministic Hash)
+    function getDeterministicSeed(name, dateStr) {
+      const cleanStr = `${name.trim().toLowerCase()}|${dateStr.trim()}`;
+      let nums = [];
+      let h = 2166136261;
+      for (let i = 0; i < 32; i++) {
+        for (let j = 0; j < cleanStr.length; j++) {
+          h ^= cleanStr.charCodeAt(j) + i;
+          h = Math.imul(h, 16777619);
+        }
+        nums.push(Math.abs(h) % 256);
+      }
+      return nums;
+    }
+
+    // 4. วาดวอลเปเปอร์สัดส่วน 9:16 (1080x1920)
+    function renderWallpaper() {
+      const name = document.getElementById('userName').value || "PLAS";
+      const dateVal = document.getElementById('birthDate').value || "1988-11-28";
+      const dateObj = new Date(dateVal);
+      const dayIndex = isNaN(dateObj.getDay()) ? 1 : dateObj.getDay();
+      const palette = taksaPalettes[dayIndex];
+      const seed = getDeterministicSeed(name, dateVal);
+
+      document.getElementById('energy-info').innerText = `${palette.day} • ${palette.desc}`;
+
+      const svg = document.getElementById('wallpaper-svg');
+      const cx = 540, cy = 960;
+      const gold = "#e6d2b5";
+      const petals = 6 + (seed % 7);
+      const radius = 150 + (seed % 100);
+      const wave = 45 + (seed % 80);
+      const rotate = seed % 360;
+
+      let svgContent = `
+        <defs>
+          <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="${palette.c1}"/>
+            <stop offset="50%" stop-color="${palette.c2}"/>
+            <stop offset="100%" stop-color="${palette.c3}"/>
+          </linearGradient>
+        </defs>
+        <rect width="1080" height="1920" fill="url(#bgGrad)"/>
+        <g transform="rotate(${rotate} ${cx} ${cy})">
+      `;
+
+      // วาดวงกลมพลังงาน 4 ชั้น
+      for (let i = 0; i < 4; i++) {
+        const r = radius + (i * 65) + (seed[i + 4] % 30);
+        const dash = (seed[i + 8] % 2 === 0) ? `stroke-dasharray="${6 + (seed[i] % 12)} ${12 + (seed[i+1] % 18)}"` : "";
+        svgContent += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${gold}" stroke-width="${i === 0 ? 3.5 : 1.8}" stroke-opacity="${0.4 + (i * 0.1)}" ${dash}/>`;
+      }
+
+      // วาดกลีบเรขาคณิตสมมาตร
+      for (let s = 0; s < petals; s++) {
+        const angle = (360 / petals) * s;
+        svgContent += `<ellipse cx="${cx}" cy="${cy - (radius * 0.6)}" rx="${wave}" ry="${radius * 0.85}" fill="none" stroke="${gold}" stroke-width="2.2" stroke-opacity="0.7" transform="rotate(${angle} ${cx} ${cy})"/>`;
+      }
+
+      svgContent += `</g>`;
+      svg.innerHTML = svgContent;
+    }
+
+    // 5. แปลง SVG เป็นไฟล์ภาพ PNG ความละเอียดสูงให้กดเซฟลงมือถือ
+    function downloadPNG() {
+      const svg = document.getElementById('wallpaper-svg');
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const canvas = document.createElement("canvas");
+      canvas.width = 1080;
+      canvas.height = 1920;
+      const ctx = canvas.getContext("2d");
+      const img = new Image();
+      img.onload = function() {
+        ctx.drawImage(img, 0, 0);
+        const a = document.createElement("a");
+        a.download = `AURA_${document.getElementById('userName').value || 'WALLPAPER'}.png`;
+        a.href = canvas.toDataURL("image/png");
+        a.click();
+      };
+      img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+    }
+
+    // รันครั้งแรกทันทีที่เปิดหน้าเว็บ
+    renderWallpaper();
+  </script>
+</body>
+</html>
